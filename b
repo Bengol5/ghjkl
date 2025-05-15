@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertTriangle } from "lucide-react";
+import CryptoJS from "crypto-js";
 
 const generateSeedPhrase = () => {
   const words = [
@@ -12,9 +13,20 @@ const generateSeedPhrase = () => {
   return Array.from({ length: 6 }, () => words[Math.floor(Math.random() * words.length)]);
 };
 
-const mockDB = new Map();
+const encrypt = (data, key) => CryptoJS.AES.encrypt(JSON.stringify(data), key).toString();
+const decrypt = (ciphertext, key) => {
+  try {
+    const bytes = CryptoJS.AES.decrypt(ciphertext, key);
+    return JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+  } catch (e) {
+    return null;
+  }
+};
+
+const LOCAL_STORAGE_KEY = "proxy_users";
 
 export default function ProxyDashboard() {
+  const [users, setUsers] = useState({});
   const [loggedIn, setLoggedIn] = useState(false);
   const [registerMode, setRegisterMode] = useState(false);
   const [username, setUsername] = useState("");
@@ -22,9 +34,24 @@ export default function ProxyDashboard() {
   const [error, setError] = useState("");
   const [hovered, setHovered] = useState(null);
   const [seedPhrase, setSeedPhrase] = useState<string[]>([]);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState("");
+
+  useEffect(() => {
+    const data = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (data) {
+      const decrypted = decrypt(data, "secret-key");
+      if (decrypted) setUsers(decrypted);
+    }
+  }, []);
+
+  const saveUsers = (data) => {
+    setUsers(data);
+    localStorage.setItem(LOCAL_STORAGE_KEY, encrypt(data, "secret-key"));
+  };
 
   const handleLogin = () => {
-    const user = mockDB.get(username);
+    const user = users[username];
     if (user && user.password === password) {
       setLoggedIn(true);
       setError("");
@@ -34,14 +61,29 @@ export default function ProxyDashboard() {
   };
 
   const handleRegister = () => {
-    if (mockDB.has(username)) {
+    if (users[username]) {
       setError("Username already exists");
       return;
     }
     const newSeed = generateSeedPhrase();
-    mockDB.set(username, { password, seedPhrase: newSeed });
+    const newUsers = {
+      ...users,
+      [username]: { password, seedPhrase: newSeed }
+    };
+    saveUsers(newUsers);
     setSeedPhrase(newSeed);
     setError("");
+  };
+
+  const handleRecovery = () => {
+    const match = Object.entries(users).find(([, user]) => user.seedPhrase.join(" ") === recoveryInput.trim());
+    if (match) {
+      setUsername(match[0]);
+      setPassword(match[1].password);
+      setError("Recovered account. Please log in.");
+    } else {
+      setError("Invalid recovery phrase");
+    }
   };
 
   const protectedLinks = ["Dashboard", "Residential Proxies", "Static ISP Proxies"];
@@ -52,21 +94,33 @@ export default function ProxyDashboard() {
         <Card className="w-full max-w-sm bg-[#1E293B] border-none">
           <CardContent className="p-6">
             <h2 className="text-2xl font-bold mb-4 text-center">
-              {registerMode ? "Register" : "Login"}
+              {recoveryMode ? "Recover Account" : registerMode ? "Register" : "Login"}
             </h2>
-            <Input
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="mb-3 bg-[#334155] text-white border-none"
-            />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mb-3 bg-[#334155] text-white border-none"
-            />
+            {!recoveryMode && (
+              <>
+                <Input
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="mb-3 bg-[#334155] text-white border-none"
+                />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="mb-3 bg-[#334155] text-white border-none"
+                />
+              </>
+            )}
+            {recoveryMode && (
+              <Input
+                placeholder="Enter your recovery phrase"
+                value={recoveryInput}
+                onChange={(e) => setRecoveryInput(e.target.value)}
+                className="mb-3 bg-[#334155] text-white border-none"
+              />
+            )}
             {error && <p className="text-red-400 text-sm mb-2">{error}</p>}
             {registerMode && seedPhrase.length > 0 && (
               <div className="text-sm bg-[#334155] text-white p-2 rounded mb-2">
@@ -75,21 +129,21 @@ export default function ProxyDashboard() {
               </div>
             )}
             <Button
-              onClick={registerMode ? handleRegister : handleLogin}
+              onClick={recoveryMode ? handleRecovery : registerMode ? handleRegister : handleLogin}
               className="w-full bg-[#0EA5E9] hover:bg-[#0284C7] text-white"
             >
-              {registerMode ? "Register" : "Login"}
+              {recoveryMode ? "Recover" : registerMode ? "Register" : "Login"}
             </Button>
-            <p
-              className="text-center text-sm text-blue-400 cursor-pointer mt-2"
-              onClick={() => {
-                setRegisterMode(!registerMode);
-                setSeedPhrase([]);
-                setError("");
-              }}
-            >
-              {registerMode ? "Already have an account? Login" : "Don't have an account? Register"}
-            </p>
+            <div className="text-center text-sm text-blue-400 cursor-pointer mt-2 space-y-1">
+              {!recoveryMode && (
+                <p onClick={() => { setRegisterMode(!registerMode); setSeedPhrase([]); setError(""); }}>
+                  {registerMode ? "Already have an account? Login" : "Don't have an account? Register"}
+                </p>
+              )}
+              <p onClick={() => { setRecoveryMode(!recoveryMode); setError(""); }}>
+                {recoveryMode ? "Back to login" : "Recover account"}
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -98,7 +152,6 @@ export default function ProxyDashboard() {
 
   return (
     <div className="flex min-h-screen bg-[#0F172A] text-white">
-      {/* Sidebar */}
       <div className="w-64 bg-[#1E293B] p-4 space-y-4">
         {protectedLinks.map((link, index) => (
           <div
@@ -121,7 +174,6 @@ export default function ProxyDashboard() {
         <Button className="bg-[#0EA5E9] hover:bg-[#0284C7] text-white mt-4">+ Add Funds</Button>
       </div>
 
-      {/* Main Panel */}
       <div className="flex-1 p-6">
         <h1 className="text-2xl font-bold mb-6">Welcome back, {username.charAt(0).toUpperCase() + username.slice(1)}</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
