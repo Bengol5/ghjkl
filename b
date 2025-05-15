@@ -1,3 +1,6 @@
+// This is now a Next.js page component placed in `app/page.tsx` or `pages/index.tsx`
+"use client";
+
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,7 +28,7 @@ const decrypt = (ciphertext, key) => {
 
 const LOCAL_STORAGE_KEY = "proxy_users";
 
-export default function ProxyDashboard() {
+export default function Home() {
   const [users, setUsers] = useState({});
   const [loggedIn, setLoggedIn] = useState(false);
   const [registerMode, setRegisterMode] = useState(false);
